@@ -30,6 +30,7 @@ class GeminiChatVertexNode:
                 ], {"default": "global"}),
                 "service_account": ("STRING", {"multiline": True, "default": ""}),
                 "model": ([
+                    "gemini-3.7-flash", 
                     "gemini-3.6-flash", 
                     "gemini-3.5-flash", 
                     "gemini-3.5-flash-lite", 
@@ -41,7 +42,7 @@ class GeminiChatVertexNode:
                     "gemini-2.5-flash-lite", 
                     "gemini-flash-latest", 
                     "gemini-flash-lite-latest"
-                ], {"default": "gemini-3.5-flash"}),
+                ], {"default": "gemini-3.7-flash"}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 2.0, "step": 0.1}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "thinking": ("BOOLEAN", {"default": True}),

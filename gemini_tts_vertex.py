@@ -25,7 +25,11 @@ class GeminiTTSVertexNode:
                     "me-central1", "me-central2", "me-west1"
                 ], {"default": "us-central1"}),
                 "service_account": ("STRING", {"multiline": True, "default": ""}),
-                "model": (["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts", "gemini-3.1-flash-tts-preview"],),
+                "model": ([
+                    "gemini-3.1-flash-tts-preview",
+                    "gemini-2.5-pro-preview-tts",
+                    "gemini-2.5-flash-preview-tts"
+                ], {"default": "gemini-3.1-flash-tts-preview"}),
                 "voice_id": (["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Achernar", "Laomedeia", "Rasalgethi", "Algenib", "Achird", "Pulcherrima", "Gacrux", "Schedar", "Alnilam", "Sulafat", "Sadaltager", "Sadachbia", "Vindemiatrix", "Zubenelgenubi"],),
                 "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1}),
                 "temperature": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01}),
