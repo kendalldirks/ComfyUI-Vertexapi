@@ -79,8 +79,6 @@ Creative image generation using Gemini on Vertex AI.
     *   `google_search`: Grounding. Supported by Nano Banana Pro and Nano Banana 2 only; ignored with a log line on the others.
     *   `prompt` (Optional): Text prompt.
     *   `image_1` to `image_14` (Optional): Source images. The Gemini 3 image models accept up to 14 per request, `gemini-2.5-flash-image` only 3.
-    *   `video_1`, `video_2` (Optional): Source videos, for generating an image from video. Nano Banana 2 and Nano Banana 2 Lite only — Pro and the legacy 2.5 model take no video input. The API allows 10 per request, but they are sent inline in the request body, so two is the practical ceiling.
-    *   `youtube_url` (Optional): A single YouTube URL used as video input, on the same models.
 *   **Output:**
     *   `image`: Generated image.
 

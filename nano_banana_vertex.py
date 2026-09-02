@@ -13,13 +13,10 @@ from .vertex_model_caps import (
     RESOLUTIONS,
     build_image_config,
     check_image_count,
-    check_video_count,
     supports_google_search,
 )
-from .vertex_video import video_to_bytes
 
 MAX_IMAGE_SLOTS = 14
-MAX_VIDEO_SLOTS = 2
 
 class NanoBananaVertexNode:
 
@@ -27,12 +24,10 @@ class NanoBananaVertexNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # ComfyUI draws every "required" widget before every "optional" one,
-                # so widget order is just declaration order. youtube_url sits here,
-                # first, purely so it lands directly beneath the video sockets; an
-                # empty string means "unused". prompt and system_instruction live in
-                # "optional" at the bottom so the two text boxes sit together.
-                "youtube_url": ("STRING", {"multiline": False, "default": ""}),
+                # ComfyUI draws every "required" widget before every "optional"
+                # one, so widget order is just declaration order. prompt and
+                # system_instruction live in "optional" at the bottom so the two
+                # text boxes sit together.
                 "project_id": ("STRING", {"multiline": False, "default": ""}),
                 "location": ([
                     "global", "us-central1", "us-east1", "us-east4", "us-east5", "us-south1",
@@ -65,7 +60,6 @@ class NanoBananaVertexNode:
                 "prompt": ("STRING", {"multiline": True, "default": ""}),
                 "system_instruction": ("STRING", {"multiline": True, "default": ""}),
                 **{f"image_{i}": ("IMAGE",) for i in range(1, MAX_IMAGE_SLOTS + 1)},
-                **{f"video_{i}": ("VIDEO",) for i in range(1, MAX_VIDEO_SLOTS + 1)},
             }
         }
 
@@ -109,13 +103,12 @@ class NanoBananaVertexNode:
         return buf.getvalue()
 
     async def generate(self, project_id, location, service_account, model, aspect_ratio, resolution,
-                       temperature, top_p, google_search, seed, youtube_url="",
+                       temperature, top_p, google_search, seed,
                        prompt="", system_instruction="", **kwargs):
 
         client = self.setup_client(service_account, project_id, location)
 
         parts = []
-
         image_count = 0
         for i in range(1, MAX_IMAGE_SLOTS + 1):
             img = kwargs.get(f"image_{i}")
@@ -124,21 +117,11 @@ class NanoBananaVertexNode:
                 parts.append(types.Part.from_bytes(mime_type="image/png", data=self._convert_tensor_to_bytes(img)))
         check_image_count(model, image_count)
 
-        videos = [(i, kwargs.get(f"video_{i}")) for i in range(1, MAX_VIDEO_SLOTS + 1)]
-        videos = [(i, v) for i, v in videos if v is not None]
-        youtube_url = (youtube_url or "").strip()
-        check_video_count(model, len(videos), youtube_url)
-        for i, vid in videos:
-            data, mime = video_to_bytes(vid, label=f"video_{i}")
-            parts.append(types.Part.from_bytes(mime_type=mime, data=data))
-        if youtube_url:
-            parts.append(types.Part.from_uri(file_uri=youtube_url, mime_type="video/*"))
-
         if prompt.strip():
             parts.append(types.Part.from_text(text=prompt))
 
         if not parts:
-            raise ValueError("At least one image, video or prompt must be provided.")
+            raise ValueError("At least one image or prompt must be provided.")
 
         tools = None
         if google_search:
