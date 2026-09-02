@@ -7,13 +7,19 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+from .vertex_async import run_blocking
 from .vertex_model_caps import (
     ASPECT_RATIOS,
     RESOLUTIONS,
     build_image_config,
     check_image_count,
+    check_video_count,
     supports_google_search,
 )
+from .vertex_video import video_to_bytes
+
+MAX_IMAGE_SLOTS = 14
+MAX_VIDEO_SLOTS = 2
 
 class NanoBananaVertexNode:
 
@@ -52,11 +58,9 @@ class NanoBananaVertexNode:
             },
             "optional": {
                 "system_instruction": ("STRING", {"multiline": True, "default": ""}),
-                "image_1": ("IMAGE",),
-                "image_2": ("IMAGE",),
-                "image_3": ("IMAGE",),
-                "image_4": ("IMAGE",),
-                "image_5": ("IMAGE",),
+                "youtube_url": ("STRING", {"multiline": False, "default": ""}),
+                **{f"image_{i}": ("IMAGE",) for i in range(1, MAX_IMAGE_SLOTS + 1)},
+                **{f"video_{i}": ("VIDEO",) for i in range(1, MAX_VIDEO_SLOTS + 1)},
             }
         }
 
@@ -99,26 +103,37 @@ class NanoBananaVertexNode:
         Image.fromarray(arr).save(buf, format='PNG')
         return buf.getvalue()
 
-    def generate(self, project_id, location, service_account, model, aspect_ratio, resolution,
-                 temperature, top_p, google_search, seed,
-                 prompt="", system_instruction="", **kwargs):
+    async def generate(self, project_id, location, service_account, model, aspect_ratio, resolution,
+                       temperature, top_p, google_search, seed,
+                       prompt="", system_instruction="", youtube_url="", **kwargs):
 
         client = self.setup_client(service_account, project_id, location)
 
         parts = []
+
         image_count = 0
-        for i in range(1, 6):
+        for i in range(1, MAX_IMAGE_SLOTS + 1):
             img = kwargs.get(f"image_{i}")
             if img is not None:
                 image_count += 1
                 parts.append(types.Part.from_bytes(mime_type="image/png", data=self._convert_tensor_to_bytes(img)))
         check_image_count(model, image_count)
 
+        videos = [(i, kwargs.get(f"video_{i}")) for i in range(1, MAX_VIDEO_SLOTS + 1)]
+        videos = [(i, v) for i, v in videos if v is not None]
+        youtube_url = (youtube_url or "").strip()
+        check_video_count(model, len(videos), youtube_url)
+        for i, vid in videos:
+            data, mime = video_to_bytes(vid, label=f"video_{i}")
+            parts.append(types.Part.from_bytes(mime_type=mime, data=data))
+        if youtube_url:
+            parts.append(types.Part.from_uri(file_uri=youtube_url, mime_type="video/*"))
+
         if prompt.strip():
             parts.append(types.Part.from_text(text=prompt))
 
         if not parts:
-            raise ValueError("At least one image or prompt must be provided.")
+            raise ValueError("At least one image, video or prompt must be provided.")
 
         tools = None
         if google_search:
@@ -140,7 +155,8 @@ class NanoBananaVertexNode:
         )
 
         try:
-            response = client.models.generate_content(
+            response = await run_blocking(
+                client.models.generate_content,
                 model=model,
                 contents=[types.Content(role="user", parts=parts)],
                 config=config,

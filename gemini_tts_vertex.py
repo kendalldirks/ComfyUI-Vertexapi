@@ -3,6 +3,8 @@ import torch
 from google.genai import Client, types
 from google.oauth2 import service_account
 
+from .vertex_async import run_blocking
+
 class GeminiTTSVertexNode:
 
     @classmethod
@@ -74,7 +76,7 @@ class GeminiTTSVertexNode:
             )
         )
 
-    def generate_speech(self, text, project_id, location, service_account, model, voice_id,
+    async def generate_speech(self, text, project_id, location, service_account, model, voice_id,
                         temperature, seed, audio_profile="", style="None", pace="None", accent="None", scene=""):
 
         if not text.strip():
@@ -114,10 +116,11 @@ class GeminiTTSVertexNode:
         )
 
         try:
-            response = client.models.generate_content(
+            response = await run_blocking(
+                client.models.generate_content,
                 model=model,
                 contents=prompt,
-                config=config
+                config=config,
             )
         except Exception as e:
             raise RuntimeError(f"Gemini API Error: {str(e)}")

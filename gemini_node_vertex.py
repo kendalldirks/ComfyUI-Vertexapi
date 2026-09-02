@@ -8,6 +8,7 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+from .vertex_async import run_blocking
 from .vertex_model_caps import THINKING_LEVEL_CHOICES, build_thinking_config
 
 class GeminiChatVertexNode:
@@ -92,7 +93,7 @@ class GeminiChatVertexNode:
             )
         )
 
-    def generate(self, prompt, project_id, location, service_account, model, temperature, top_p,
+    async def generate(self, prompt, project_id, location, service_account, model, temperature, top_p,
                  thinking, google_search, url_context, seed,
                  system_instruction=None, thinking_level="auto", thinking_budget=-1,
                  image=None, audio=None):
@@ -136,10 +137,11 @@ class GeminiChatVertexNode:
             tools=tools if tools else None
         )
         
-        response = client.models.generate_content(
+        response = await run_blocking(
+            client.models.generate_content,
             model=model,
             contents=[types.Content(role="user", parts=parts)],
-            config=config
+            config=config,
         )
         
         return (response.text,)

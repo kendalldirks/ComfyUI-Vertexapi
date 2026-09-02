@@ -8,6 +8,7 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+from .vertex_async import run_blocking
 from .vertex_model_caps import THINKING_LEVEL_CHOICES, build_thinking_config
 
 class GeminiDiarisationNode:
@@ -102,7 +103,7 @@ class GeminiDiarisationNode:
             return sum(float(x) * 60 ** i for i, x in enumerate(reversed(parts)))
         except: return 0.0
 
-    def diarise(self, audio, num_speakers, project_id, location, service_account, model, seed, temperature,
+    async def diarise(self, audio, num_speakers, project_id, location, service_account, model, seed, temperature,
                 thinking=False, thinking_level="auto", thinking_budget=0,
                 audio_timestamp=False):
 
@@ -167,13 +168,14 @@ class GeminiDiarisationNode:
             thinking_config=t_config
         )
 
-        response = client.models.generate_content(
+        response = await run_blocking(
+            client.models.generate_content,
             model=model,
             contents=[types.Content(role="user", parts=[
                 types.Part.from_bytes(mime_type="audio/wav", data=wav_buffer.getvalue()),
                 types.Part.from_text(text=prompt)
             ])],
-            config=config
+            config=config,
         )
 
         try:

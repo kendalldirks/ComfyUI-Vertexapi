@@ -135,6 +135,8 @@ IMAGE_MODEL_CAPS = {
         "resolutions": ("1K", "2K", "4K"),
         "google_search": True,
         "max_images": 14,
+        "max_videos": 0,          # modality table lists video as not supported
+        "max_youtube": 0,
     },
     "gemini-3.1-flash-image": {
         "aspect_ratios": _AR_FULL,
@@ -143,18 +145,24 @@ IMAGE_MODEL_CAPS = {
         "resolutions": ("512", "1K", "2K", "4K"),
         "google_search": True,
         "max_images": 14,
+        "max_videos": 10,
+        "max_youtube": 1,
     },
     "gemini-3.1-flash-lite-image": {
         "aspect_ratios": _AR_LITE,
         "resolutions": ("1K",),
         "google_search": False,
         "max_images": 14,
+        "max_videos": 10,
+        "max_youtube": 1,
     },
     "gemini-2.5-flash-image": {
         "aspect_ratios": _AR_LEGACY,
         "resolutions": (),          # no output resolution control at all
         "google_search": False,
         "max_images": 3,
+        "max_videos": 0,
+        "max_youtube": 0,
     },
 }
 
@@ -176,6 +184,25 @@ def check_image_count(model, count):
             f"{model} accepts at most {caps['max_images']} input images, "
             f"but {count} are connected."
         )
+
+
+def check_video_count(model, video_count, youtube_url=""):
+    """Only the Nano Banana 2 models generate images from video input."""
+    caps = IMAGE_MODEL_CAPS.get(model)
+    if caps is None:
+        return
+    if (video_count or youtube_url) and not caps["max_videos"] and not caps["max_youtube"]:
+        raise ValueError(
+            f"{model} does not accept video input. Use gemini-3.1-flash-image or "
+            f"gemini-3.1-flash-lite-image for image generation from video."
+        )
+    if video_count > caps["max_videos"]:
+        raise ValueError(
+            f"{model} accepts at most {caps['max_videos']} input videos, "
+            f"but {video_count} are connected."
+        )
+    if youtube_url and caps["max_youtube"] < 1:
+        raise ValueError(f"{model} does not accept YouTube URLs.")
 
 
 def build_image_config(model, aspect_ratio, resolution):

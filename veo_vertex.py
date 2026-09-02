@@ -1,4 +1,4 @@
-import time
+import asyncio
 import io
 import json
 import torch
@@ -8,6 +8,8 @@ from PIL import Image
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
+
+from .vertex_async import run_blocking
 
 class GoogleVeoVertexVideoGenerator:
     @classmethod
@@ -83,7 +85,7 @@ class GoogleVeoVertexVideoGenerator:
             )
         )
 
-    def generate_video(self, prompt, project_id, location, service_account, model, resolution, aspect_ratio,
+    async def generate_video(self, prompt, project_id, location, service_account, model, resolution, aspect_ratio,
                        duration_seconds, seed, generate_audio, fps, negative_prompt=None,
                        first_frame=None, last_frame=None):
 
@@ -113,12 +115,14 @@ class GoogleVeoVertexVideoGenerator:
         if last_frame is not None:
             setattr(config, 'last_frame', types.Image(image_bytes=tensor_to_bytes(last_frame), mime_type="image/png"))
 
-        op = client.models.generate_videos(**gen_kwargs)
+        op = await run_blocking(client.models.generate_videos, **gen_kwargs)
         print(f"Veo Operation: {op.name}")
 
         while not op.done:
-            time.sleep(5)
-            op = client.operations.get(op)
+            # asyncio.sleep, not time.sleep: a Veo job runs for minutes and must
+            # not hold the event loop hostage while it polls.
+            await asyncio.sleep(5)
+            op = await run_blocking(client.operations.get, op)
 
         if op.error: raise Exception(f"Veo Error: {op.error}")
         if not op.result.generated_videos: raise Exception("No videos generated")

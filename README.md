@@ -4,6 +4,8 @@ A collection of powerful custom nodes for ComfyUI that connect your local workfl
 
 ## Key Features
 
+All nodes run their API calls off the ComfyUI event loop, so a generation in flight doesn't stall the rest of your graph or the queue.
+
 *   **Gemini Chat (Vertex AI):** Google's powerful multimodal AI via Vertex AI. Ask questions about an image, generate detailed descriptions, or create prompts for other models. Supports thinking budget controls.
 *   **Nano Banana (Vertex AI):** A creative image generation node using a specialized Gemini model on Vertex AI.
 *   **Veo Text-to-Video (Vertex AI):** Generate high-quality video clips from text prompts using Google's Veo model via Vertex AI.
@@ -76,7 +78,9 @@ Creative image generation using Gemini on Vertex AI.
     *   `resolution`: `512` / `1K` / `2K` / `4K`. `512` is Nano Banana 2 only, Lite is `1K` only, and `gemini-2.5-flash-image` has no resolution control at all (the value is ignored). Note that Google currently ignores `image_size` on `gemini-3.1-flash-image` and returns ~1K regardless.
     *   `google_search`: Grounding. Supported by Nano Banana Pro and Nano Banana 2 only; ignored with a log line on the others.
     *   `prompt` (Optional): Text prompt.
-    *   `image_1` to `image_5` (Optional): Source images. The Gemini 3 image models accept up to 14 per request, `gemini-2.5-flash-image` only 3.
+    *   `image_1` to `image_14` (Optional): Source images. The Gemini 3 image models accept up to 14 per request, `gemini-2.5-flash-image` only 3.
+    *   `video_1`, `video_2` (Optional): Source videos, for generating an image from video. Nano Banana 2 and Nano Banana 2 Lite only — Pro and the legacy 2.5 model take no video input. The API allows 10 per request, but they are sent inline in the request body, so two is the practical ceiling.
+    *   `youtube_url` (Optional): A single YouTube URL used as video input, on the same models.
 *   **Output:**
     *   `image`: Generated image.
 
