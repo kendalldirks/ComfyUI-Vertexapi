@@ -4,8 +4,6 @@ from . import (
     gemini_tts_vertex,
     veo_vertex,
     gemini_diarisation_vertex,
-    imagen_edit_vertex,
-    imagen_vertex,
 )
 
 NODE_CLASS_MAPPINGS = {}
@@ -17,8 +15,6 @@ modules = [
     gemini_tts_vertex,
     veo_vertex,
     gemini_diarisation_vertex,
-    imagen_edit_vertex,
-    imagen_vertex,
 ]
 
 for module in modules:

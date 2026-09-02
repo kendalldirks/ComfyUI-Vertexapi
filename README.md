@@ -1,12 +1,10 @@
 # ComfyUI-VertexAPI
 
-A collection of powerful custom nodes for ComfyUI that connect your local workflows to Google's Vertex AI models. Use Google's Gemini, Imagen, and Veo models directly within ComfyUI using your Google Cloud Vertex AI credentials.
+A collection of powerful custom nodes for ComfyUI that connect your local workflows to Google's Vertex AI models. Use Google's Gemini and Veo models directly within ComfyUI using your Google Cloud Vertex AI credentials.
 
 ## Key Features
 
 *   **Gemini Chat (Vertex AI):** Google's powerful multimodal AI via Vertex AI. Ask questions about an image, generate detailed descriptions, or create prompts for other models. Supports thinking budget controls.
-*   **Google Imagen Edit (Vertex AI):** Perform advanced image editing, inpainting, outpainting, and background swapping using Imagen on Google's Vertex AI platform.
-*   **Google Imagen Generator (Vertex AI):** Create images with Google's Imagen models via Vertex AI.
 *   **Nano Banana (Vertex AI):** A creative image generation node using a specialized Gemini model on Vertex AI.
 *   **Veo Text-to-Video (Vertex AI):** Generate high-quality video clips from text prompts using Google's Veo model via Vertex AI.
 *   **Gemini TTS (Vertex AI):** Create speech from text using Google's Gemini models via Vertex AI.
@@ -65,34 +63,6 @@ A versatile node for text generation and image analysis using Vertex AI.
     *   `response`: The generated text.
 
 
-### Google Imagen Edit (Vertex AI)
-
-Advanced image editing using Imagen on Vertex AI.
-
-*   **Category:** `image/edit`
-*   **Inputs:**
-    *   `image`: Source image.
-    *   `mask`: Mask defining the edit area.
-    *   `prompt`: Description of the edit.
-    *   `project_id`, `location`, `service_account`: Vertex AI credentials.
-    *   `edit_mode`: Inpaint insertion, removal, outpainting, or background swap.
-*   **Output:**
-    *   `edited_images`: The edited image(s).
-
-### Google Imagen Generator (Vertex AI)
-
-Generate images using Google's Imagen models via Vertex AI.
-
-*   **Category:** `image/generation`
-*   **Inputs:**
-    *   `prompt`: Image description.
-    *   `project_id`, `location`, `service_account`: Vertex AI credentials.
-    *   `model`: Imagen model to use (e.g., `imagen-3.0-generate-001`).
-    *   `negative_prompt` (Optional): What to avoid in the image.
-    *   `aspect_ratio`, `image_size`, `guidance_scale`, `seed`: Generation controls.
-*   **Output:**
-    *   `images`: Generated image(s).
-
 ### Nano Banana (Vertex AI)
 
 Creative image generation using Gemini on Vertex AI.
@@ -147,4 +117,4 @@ Speaker diarization using Gemini on Vertex AI.
 ##  Acknowledgements
 
 *   The [ComfyUI](https://github.com/comfyanonymous/ComfyUI) team.
-*   Google for Vertex AI and the incredible Gemini, Imagen, and Veo models.
+*   Google for Vertex AI and the incredible Gemini and Veo models.
