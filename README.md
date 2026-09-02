@@ -55,10 +55,11 @@ A versatile node for text generation and image analysis using Vertex AI.
     *   `project_id`: Your Google Cloud Project ID.
     *   `location`: Google Cloud location (default: `us-central1`).
     *   `service_account`: Path to your service account JSON file.
-    *   `model`: The Gemini model to use (e.g., `gemini-2.5-pro`).
+    *   `model`: The Gemini model to use (e.g., `gemini-3.7-flash`).
     *   `image` (Optional): Input image for analysis.
-    *   `thinking`: Enable thinking process.
-    *   `thinking_budget`: Token budget for thinking.
+    *   `thinking`: Enable the thinking process. Gemini 3 models cannot switch thinking off entirely, so this drops them to their lowest supported level.
+    *   `thinking_level` (Optional): `auto` / `minimal` / `low` / `medium` / `high`, used by Gemini 3 and later. `auto` leaves the model on its own default. A level the chosen model doesn't support falls back to the nearest one it does.
+    *   `thinking_budget` (Optional): Token budget, used by Gemini 2.5 and earlier. Clamped to each model's supported range. Ignored by Gemini 3 models, which take `thinking_level` instead — sending both is an API error.
 *   **Output:**
     *   `response`: The generated text.
 
@@ -70,9 +71,12 @@ Creative image generation using Gemini on Vertex AI.
 *   **Category:** `image/generation`
 *   **Inputs:**
     *   `project_id`, `location`, `service_account`: Vertex AI credentials.
-    *   `model`: Gemini model (e.g., `gemini-3-pro-image-preview`).
+    *   `model`: Gemini image model (e.g., `gemini-3-pro-image`).
+    *   `aspect_ratio`: The full set of 15 ratios. Which ones are valid depends on the model — Nano Banana 2 Lite has no `9:21`, and the legacy `gemini-2.5-flash-image` supports only the ten common ones. An unsupported combination raises an error naming what the model does accept.
+    *   `resolution`: `512` / `1K` / `2K` / `4K`. `512` is Nano Banana 2 only, Lite is `1K` only, and `gemini-2.5-flash-image` has no resolution control at all (the value is ignored). Note that Google currently ignores `image_size` on `gemini-3.1-flash-image` and returns ~1K regardless.
+    *   `google_search`: Grounding. Supported by Nano Banana Pro and Nano Banana 2 only; ignored with a log line on the others.
     *   `prompt` (Optional): Text prompt.
-    *   `image_1` to `image_5` (Optional): Source images.
+    *   `image_1` to `image_5` (Optional): Source images. The Gemini 3 image models accept up to 14 per request, `gemini-2.5-flash-image` only 3.
 *   **Output:**
     *   `image`: Generated image.
 

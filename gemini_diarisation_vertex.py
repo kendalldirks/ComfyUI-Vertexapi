@@ -8,6 +8,8 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+from .vertex_model_caps import THINKING_LEVEL_CHOICES, build_thinking_config
+
 class GeminiDiarisationNode:
     @classmethod
     def INPUT_TYPES(cls):
@@ -49,7 +51,8 @@ class GeminiDiarisationNode:
             },
             "optional": {
                 "thinking": ("BOOLEAN", {"default": False}),
-                "thinking_budget": ("INT", {"default": 0, "min": -1, "max": 24576, "step": 1}),
+                "thinking_level": (THINKING_LEVEL_CHOICES, {"default": "auto"}),
+                "thinking_budget": ("INT", {"default": 0, "min": -1, "max": 32768, "step": 1}),
                 "audio_timestamp": ("BOOLEAN", {"default": False})
             }
         }
@@ -100,7 +103,8 @@ class GeminiDiarisationNode:
         except: return 0.0
 
     def diarise(self, audio, num_speakers, project_id, location, service_account, model, seed, temperature,
-                thinking=False, thinking_budget=0, audio_timestamp=False):
+                thinking=False, thinking_level="auto", thinking_budget=0,
+                audio_timestamp=False):
 
         waveform = audio.get("waveform")
         sr = audio.get("sample_rate")
@@ -153,18 +157,8 @@ class GeminiDiarisationNode:
 
         *You must PASS this benchmark to be deployed*"""
 
-        model_lower = model.lower()
-        t_config = None
-
-        # Check if the chosen model is a Pro model (requires thinking configurations to run properly)
-        is_pro = "pro" in model_lower
-
-        if is_pro or thinking:
-            final_budget = thinking_budget if thinking else 0
-            if is_pro and final_budget == 0:
-                print("Pro models cannot have thinking turned off - defaulting thinking budget to -1")
-                final_budget = -1
-            t_config = types.ThinkingConfig(include_thoughts=False, thinking_budget=final_budget)
+        t_config = build_thinking_config(model, thinking, thinking_level, thinking_budget,
+                                         include_thoughts=False)
 
         config = types.GenerateContentConfig(
             temperature=temperature,

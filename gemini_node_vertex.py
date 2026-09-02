@@ -8,6 +8,8 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+from .vertex_model_caps import THINKING_LEVEL_CHOICES, build_thinking_config
+
 class GeminiChatVertexNode:
     @classmethod
     def INPUT_TYPES(cls):
@@ -52,7 +54,8 @@ class GeminiChatVertexNode:
             },
             "optional": {
                 "system_instruction": ("STRING", {"multiline": True, "default": ""}),
-                "thinking_budget": ("INT", {"default": -1, "min": -1, "max": 24576, "step": 1}),
+                "thinking_level": (THINKING_LEVEL_CHOICES, {"default": "auto"}),
+                "thinking_budget": ("INT", {"default": -1, "min": -1, "max": 32768, "step": 1}),
                 "image": ("IMAGE",),
                 "audio": ("AUDIO",),
             }
@@ -91,7 +94,8 @@ class GeminiChatVertexNode:
 
     def generate(self, prompt, project_id, location, service_account, model, temperature, top_p,
                  thinking, google_search, url_context, seed,
-                 system_instruction=None, thinking_budget=-1, image=None, audio=None):
+                 system_instruction=None, thinking_level="auto", thinking_budget=-1,
+                 image=None, audio=None):
 
         client = self.setup_client(service_account, project_id, location)
         parts = [types.Part.from_text(text=prompt)]
@@ -117,19 +121,7 @@ class GeminiChatVertexNode:
                 w.writeframes(wf_int16.tobytes())
             parts.append(types.Part.from_bytes(mime_type="audio/wav", data=buf.getvalue()))
 
-        model_lower = model.lower()
-        t_config = None
-
-        # Check if the chosen model is a Pro model (requires thinking configurations to run properly)
-        is_pro = "pro" in model_lower
-
-        if is_pro or thinking:
-            final_budget = thinking_budget if thinking else 0
-            if is_pro and final_budget == 0:
-                print("Pro models cannot have thinking turned off - defaulting thinking budget to -1")
-                final_budget = -1
-            
-            t_config = types.ThinkingConfig(thinking_budget=final_budget)
+        t_config = build_thinking_config(model, thinking, thinking_level, thinking_budget)
 
         tools = []
         if google_search: tools.append(types.Tool(googleSearch=types.GoogleSearch()))

@@ -7,6 +7,14 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+from .vertex_model_caps import (
+    ASPECT_RATIOS,
+    RESOLUTIONS,
+    build_image_config,
+    check_image_count,
+    supports_google_search,
+)
+
 class NanoBananaVertexNode:
 
     @classmethod
@@ -35,9 +43,9 @@ class NanoBananaVertexNode:
                     "gemini-3.1-flash-lite-image",
                     "gemini-2.5-flash-image"
                 ], {"default": "gemini-3-pro-image"}),
-                "aspect_ratio": (["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"],),
-                "resolution": (["1K", "2K", "4K"], {"default": "1K"}),
-                "temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "aspect_ratio": (ASPECT_RATIOS, {"default": "1:1"}),
+                "resolution": (RESOLUTIONS, {"default": "1K"}),
+                "temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 2.0, "step": 0.01}),
                 "top_p": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "google_search": ("BOOLEAN", {"default": False}),
                 "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1}),
@@ -98,10 +106,13 @@ class NanoBananaVertexNode:
         client = self.setup_client(service_account, project_id, location)
 
         parts = []
+        image_count = 0
         for i in range(1, 6):
             img = kwargs.get(f"image_{i}")
             if img is not None:
+                image_count += 1
                 parts.append(types.Part.from_bytes(mime_type="image/png", data=self._convert_tensor_to_bytes(img)))
+        check_image_count(model, image_count)
 
         if prompt.strip():
             parts.append(types.Part.from_text(text=prompt))
@@ -111,14 +122,12 @@ class NanoBananaVertexNode:
 
         tools = None
         if google_search:
-            if "gemini-2.5" in model or "gemini-3.1-flash-lite-image" in model:
-                print(f"Ignoring google_search: {model} does not support it.")
-            else:
+            if supports_google_search(model):
                 tools = [types.Tool(googleSearch=types.GoogleSearch())]
+            else:
+                print(f"[VertexAPI] Ignoring google_search: {model} does not support it.")
 
-        img_config_params = {"aspect_ratio": aspect_ratio}
-        if "gemini-3-pro" in model:
-            img_config_params["image_size"] = resolution
+        img_config_params = build_image_config(model, aspect_ratio, resolution)
 
         config = types.GenerateContentConfig(
             temperature=temperature,
