@@ -27,7 +27,12 @@ class NanoBananaVertexNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "prompt": ("STRING", {"multiline": True, "default": ""}),
+                # ComfyUI draws every "required" widget before every "optional" one,
+                # so widget order is just declaration order. youtube_url sits here,
+                # first, purely so it lands directly beneath the video sockets; an
+                # empty string means "unused". prompt and system_instruction live in
+                # "optional" at the bottom so the two text boxes sit together.
+                "youtube_url": ("STRING", {"multiline": False, "default": ""}),
                 "project_id": ("STRING", {"multiline": False, "default": ""}),
                 "location": ([
                     "global", "us-central1", "us-east1", "us-east4", "us-east5", "us-south1",
@@ -57,8 +62,8 @@ class NanoBananaVertexNode:
                 "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1}),
             },
             "optional": {
+                "prompt": ("STRING", {"multiline": True, "default": ""}),
                 "system_instruction": ("STRING", {"multiline": True, "default": ""}),
-                "youtube_url": ("STRING", {"multiline": False, "default": ""}),
                 **{f"image_{i}": ("IMAGE",) for i in range(1, MAX_IMAGE_SLOTS + 1)},
                 **{f"video_{i}": ("VIDEO",) for i in range(1, MAX_VIDEO_SLOTS + 1)},
             }
@@ -104,8 +109,8 @@ class NanoBananaVertexNode:
         return buf.getvalue()
 
     async def generate(self, project_id, location, service_account, model, aspect_ratio, resolution,
-                       temperature, top_p, google_search, seed,
-                       prompt="", system_instruction="", youtube_url="", **kwargs):
+                       temperature, top_p, google_search, seed, youtube_url="",
+                       prompt="", system_instruction="", **kwargs):
 
         client = self.setup_client(service_account, project_id, location)
 
