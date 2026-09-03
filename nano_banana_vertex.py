@@ -15,6 +15,7 @@ from .vertex_model_caps import (
     check_image_count,
     supports_google_search,
 )
+from .vertex_response import extract_image_bytes
 
 MAX_IMAGE_SLOTS = 14
 
@@ -152,12 +153,12 @@ class NanoBananaVertexNode:
         except Exception as e:
             raise RuntimeError(f"Gemini API Error: {str(e)}")
 
-        try:
-            img_data = response.candidates[0].content.parts[0].inline_data.data
-            result_pil = Image.open(io.BytesIO(img_data)).convert("RGB")
-            return (torch.from_numpy(np.array(result_pil).astype(np.float32) / 255.0).unsqueeze(0),)
-        except (AttributeError, IndexError, TypeError):
-            raise ValueError("API returned a response, but no valid image data was found.")
+        # Raises with the actual reason (safety stop, blocked prompt, budget
+        # spent on thinking, text-only reply) rather than a bare TypeError.
+        img_data = extract_image_bytes(response, model)
+
+        result_pil = Image.open(io.BytesIO(img_data)).convert("RGB")
+        return (torch.from_numpy(np.array(result_pil).astype(np.float32) / 255.0).unsqueeze(0),)
 
     @classmethod
     def IS_CHANGED(cls, seed, **kwargs):
