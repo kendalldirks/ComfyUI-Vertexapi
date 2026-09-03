@@ -11,6 +11,22 @@ response actually carries and reports the reason.
 Its own module so it cannot conflict with upstream changes.
 """
 
+# Stops that will repeat identically for the same request, so retrying only
+# costs money. Everything else — probabilistic safety trips, recitation, an
+# empty candidate list, a text-only reply — is worth another roll of the dice.
+DETERMINISTIC = ("PROHIBITED_CONTENT", "SPII", "BLOCKLIST", "MAX_TOKENS")
+
+
+class EmptyResponseError(ValueError):
+    """A 200 OK that carried no image. `retryable` is False when re-sending the
+    same request would fail the same way."""
+
+    def __init__(self, message, retryable=True, reason=None):
+        super().__init__(message)
+        self.retryable = retryable
+        self.reason = reason
+
+
 # finish_reason values that mean "a filter stopped this", with what to do.
 _FILTER_ADVICE = {
     "SAFETY": "a safety filter stopped the generation",
@@ -46,17 +62,23 @@ def extract_image_bytes(response, model=""):
             if text and text.strip():
                 texts.append(text.strip())
 
-    raise ValueError(_explain(response, model, candidates, texts))
+    message, retryable, reason = _explain(response, model, candidates, texts)
+    raise EmptyResponseError(message, retryable=retryable, reason=reason)
 
 
 def _explain(response, model, candidates, texts):
     where = f"{model} returned a response with no image" if model else "The response contained no image"
     bits = []
+    retryable = True
+    reason = None
 
     # 1. Prompt rejected before anything was generated: candidates is empty.
     feedback = getattr(response, "prompt_feedback", None)
     block = _name(getattr(feedback, "block_reason", None)) if feedback is not None else None
     if block:
+        # The prompt itself was rejected; the same prompt will be rejected again.
+        retryable = False
+        reason = block
         bits.append(f"the prompt was blocked before generation (block_reason={block})")
         msg = getattr(feedback, "block_reason_message", None)
         if msg:
@@ -66,17 +88,21 @@ def _explain(response, model, candidates, texts):
 
     # 2. Otherwise the candidate itself says why it stopped.
     for cand in candidates[:1]:
-        reason = _name(getattr(cand, "finish_reason", None))
-        if reason and reason not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
-            bits.append(f"{_FILTER_ADVICE.get(reason, 'generation stopped early')} (finish_reason={reason})")
-            if reason == "MAX_TOKENS":
+        finish = _name(getattr(cand, "finish_reason", None))
+        if finish and finish not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+            if reason is None:
+                reason = finish
+            if finish in DETERMINISTIC:
+                retryable = False
+            bits.append(f"{_FILTER_ADVICE.get(finish, 'generation stopped early')} (finish_reason={finish})")
+            if finish == "MAX_TOKENS":
                 bits.append(
                     "the output token budget ran out before an image was produced — "
                     "thinking tokens count against it, so try a lower thinking level, "
                     "a shorter prompt, or a model with a larger output budget "
                     "(gemini-3.1-flash-lite-image allows only 4,096)"
                 )
-        elif reason == "STOP" and texts:
+        elif finish == "STOP" and texts:
             bits.append("the model replied with text instead of an image")
 
         detail = getattr(cand, "finish_message", None)
@@ -108,4 +134,4 @@ def _explain(response, model, candidates, texts):
     if not bits:
         bits.append("no reason was given — this is usually a transient filter hit, so retry with a different seed")
 
-    return where + ": " + "; ".join(bits) + "."
+    return where + ": " + "; ".join(bits) + ".", retryable, reason

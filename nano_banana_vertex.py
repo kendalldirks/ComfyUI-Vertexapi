@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import torch
@@ -15,7 +16,11 @@ from .vertex_model_caps import (
     check_image_count,
     supports_google_search,
 )
-from .vertex_response import extract_image_bytes
+from .vertex_response import EmptyResponseError, extract_image_bytes
+
+# Total attempts when retry_on_empty is on, and the pause between them.
+EMPTY_RETRY_ATTEMPTS = 3
+EMPTY_RETRY_DELAY = 1.0
 
 MAX_IMAGE_SLOTS = 14
 
@@ -55,6 +60,7 @@ class NanoBananaVertexNode:
                 "temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 2.0, "step": 0.01}),
                 "top_p": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "google_search": ("BOOLEAN", {"default": False}),
+                "retry_on_empty": ("BOOLEAN", {"default": True}),
                 "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1}),
             },
             "optional": {
@@ -104,7 +110,7 @@ class NanoBananaVertexNode:
         return buf.getvalue()
 
     async def generate(self, project_id, location, service_account, model, aspect_ratio, resolution,
-                       temperature, top_p, google_search, seed,
+                       temperature, top_p, google_search, retry_on_empty, seed,
                        prompt="", system_instruction="", **kwargs):
 
         client = self.setup_client(service_account, project_id, location)
@@ -133,29 +139,50 @@ class NanoBananaVertexNode:
 
         img_config_params = build_image_config(model, aspect_ratio, resolution)
 
-        config = types.GenerateContentConfig(
-            temperature=temperature,
-            seed=seed,
-            top_p=top_p,
-            response_modalities=["IMAGE"],
-            image_config=types.ImageConfig(**img_config_params),
-            system_instruction=system_instruction.strip() if system_instruction.strip() else None,
-            tools=tools
-        )
-
-        try:
-            response = await run_blocking(
-                client.models.generate_content,
-                model=model,
-                contents=[types.Content(role="user", parts=parts)],
-                config=config,
+        def make_config(seed_value):
+            return types.GenerateContentConfig(
+                temperature=temperature,
+                seed=seed_value,
+                top_p=top_p,
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(**img_config_params),
+                system_instruction=system_instruction.strip() if system_instruction.strip() else None,
+                tools=tools
             )
-        except Exception as e:
-            raise RuntimeError(f"Gemini API Error: {str(e)}")
 
-        # Raises with the actual reason (safety stop, blocked prompt, budget
-        # spent on thinking, text-only reply) rather than a bare TypeError.
-        img_data = extract_image_bytes(response, model)
+        contents = [types.Content(role="user", parts=parts)]
+        attempts = EMPTY_RETRY_ATTEMPTS if retry_on_empty else 1
+
+        for attempt in range(1, attempts + 1):
+            # A repeat of the same seed re-rolls to the same empty result, so
+            # step it. seed -1 already means "let the API pick", so leave it.
+            attempt_seed = seed if seed < 0 else seed + attempt - 1
+
+            try:
+                response = await run_blocking(
+                    client.models.generate_content,
+                    model=model,
+                    contents=contents,
+                    config=make_config(attempt_seed),
+                )
+            except Exception as e:
+                raise RuntimeError(f"Gemini API Error: {str(e)}")
+
+            # Raises with the actual reason (safety stop, blocked prompt, budget
+            # spent on thinking, text-only reply) rather than a bare TypeError.
+            try:
+                img_data = extract_image_bytes(response, model)
+                break
+            except EmptyResponseError as e:
+                last = attempt == attempts
+                if last or not e.retryable:
+                    if not e.retryable and not last:
+                        print(f"[VertexAPI] Not retrying: {e.reason} will repeat for this request.")
+                    raise
+                nxt = "the same random seed" if seed < 0 else f"seed {seed + attempt}"
+                print(f"[VertexAPI] Empty response on attempt {attempt}/{attempts} "
+                      f"({e.reason or 'no reason given'}); retrying with {nxt}.")
+                await asyncio.sleep(EMPTY_RETRY_DELAY)
 
         result_pil = Image.open(io.BytesIO(img_data)).convert("RGB")
         return (torch.from_numpy(np.array(result_pil).astype(np.float32) / 255.0).unsqueeze(0),)

@@ -77,6 +77,7 @@ Creative image generation using Gemini on Vertex AI.
     *   `aspect_ratio`: The full set of 15 ratios. Which ones are valid depends on the model — Nano Banana 2 Lite has no `9:21`, and the legacy `gemini-2.5-flash-image` supports only the ten common ones. An unsupported combination raises an error naming what the model does accept.
     *   `resolution`: `512` / `1K` / `2K` / `4K`. `512` is Nano Banana 2 only, Lite is `1K` only, and `gemini-2.5-flash-image` has no resolution control at all (the value is ignored). Note that Google currently ignores `image_size` on `gemini-3.1-flash-image` and returns ~1K regardless.
     *   `google_search`: Grounding. Supported by Nano Banana Pro and Nano Banana 2 only; ignored with a log line on the others.
+    *   `retry_on_empty`: On by default. When the API returns 200 with no image — a safety trip, a recitation stop — re-sends up to 3 attempts with a stepped seed instead of failing the node. Skipped for stops that would repeat identically (blocked prompt, prohibited content, MAX_TOKENS), which raise straight away.
     *   `prompt` (Optional): Text prompt.
     *   `image_1` to `image_14` (Optional): Source images. The Gemini 3 image models accept up to 14 per request, `gemini-2.5-flash-image` only 3.
 *   **Output:**
