@@ -70,7 +70,7 @@ A versatile node for text generation and image analysis using Vertex AI.
     *   `prompt`: The text prompt.
     *   `credentials`: Key file (see Credentials). Optional `project_id` / `service_account` sockets override it.
     *   `location`: Google Cloud location (default: `global`).
-    *   `model`: The Gemini model to use (default `gemini-3.8-flash`). The Gemini 2.5 models (retiring 2026-10-20) and the `gemini-flash-latest` aliases (not served on Vertex) are no longer listed. `gemini-3.6-flash` retires 2026-11-19 and `gemini-3.7-flash` 2027-01-28.
+    *   `model`: The Gemini model to use (default `gemini-3.8-flash`). `gemini-4-argon`, Google's top reasoning model, is also listed: it runs from `global` only, takes thinking levels low/medium/high, and ignores `temperature` and `top_p`. The Gemini 2.5 models (retiring 2026-10-20) and the `gemini-flash-latest` aliases (not served on Vertex) are no longer listed. `gemini-3.6-flash` retires 2026-11-19 and `gemini-3.7-flash` 2027-01-28.
     *   `image` (Optional): Input image for analysis.
     *   `thinking`: Enable the thinking process. Gemini 3 models cannot switch thinking off entirely, so this drops them to their lowest supported level.
     *   `thinking_level` (Optional): `auto` / `minimal` / `low` / `medium` / `high`, used by Gemini 3 and later. `auto` leaves the model on its own default. A level the chosen model doesn't support falls back to the nearest one it does.

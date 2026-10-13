@@ -25,6 +25,7 @@ THINKING_LEVEL_CHOICES = ["auto", "minimal", "low", "medium", "high"]
 # models retire 2026-10-20 and the gemini-flash-latest / -lite-latest aliases
 # 404 on Vertex, so none of them are listed.
 TEXT_MODELS = [
+    "gemini-4-argon",            # global only on this project; ignores temperature/top_p
     "gemini-3.8-flash",
     "gemini-3.7-flash",          # retires 2027-01-28
     "gemini-3.6-flash",          # retires 2026-11-19
@@ -39,6 +40,7 @@ DEFAULT_TEXT_MODEL = "gemini-3.8-flash"
 # Supported levels per model, in ascending order. Absent = unknown, in which
 # case we let the model use its own default rather than guessing.
 THINKING_LEVELS = {
+    "gemini-4-argon":         ("low", "medium", "high"),
     "gemini-3.8-flash":       ("low", "medium", "high"),
     "gemini-3.7-flash":       ("low", "medium", "high"),
     "gemini-3.6-flash":       ("minimal", "low", "medium", "high"),
@@ -101,7 +103,7 @@ def build_thinking_config(model, thinking, thinking_level="auto",
             if model in NO_THINKING_OFF:
                 _log(f"{model} cannot disable thinking; using thinking_level={floor.upper()}.")
             else:
-                _log(f"{model} is a Gemini 3 model and has no zero budget; "
+                _log(f"{model} is a Gemini 3+ model and has no zero budget; "
                      f"using thinking_level={floor.upper()} as the closest equivalent to off.")
             return types.ThinkingConfig(thinking_level=_level(floor), **extra)
 
