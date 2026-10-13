@@ -11,10 +11,15 @@ from google.oauth2 import service_account
 from .vertex_async import run_blocking
 from .vertex_model_caps import (
     ASPECT_RATIOS,
+    IMAGE_THINKING_CHOICES,
     RESOLUTIONS,
+    SEARCH_MODES,
     build_image_config,
+    build_image_thinking_config,
+    build_search_tool,
     check_image_count,
-    supports_google_search,
+    check_location,
+    supports_sampling,
 )
 from .vertex_response import EmptyResponseError, extract_image_bytes
 
@@ -50,22 +55,32 @@ class NanoBananaVertexNode:
                 ], {"default": "us-central1"}),
                 "service_account": ("STRING", {"multiline": True, "default": ""}),
                 "model": ([
+                    "gemini-nano-banana-2.1",
                     "gemini-3-pro-image",
                     "gemini-3.1-flash-image",
                     "gemini-3.1-flash-lite-image",
                     "gemini-2.5-flash-image"
-                ], {"default": "gemini-3-pro-image"}),
+                ], {"default": "gemini-nano-banana-2.1"}),
                 "aspect_ratio": (ASPECT_RATIOS, {"default": "1:1"}),
                 "resolution": (RESOLUTIONS, {"default": "1K"}),
-                "temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "top_p": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "google_search": ("BOOLEAN", {"default": False}),
+                "temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 2.0, "step": 0.01,
+                                          "tooltip": "Ignored by gemini-nano-banana-2.1 (the API rejects it)."}),
+                "top_p": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01,
+                                    "tooltip": "Ignored by gemini-nano-banana-2.1 (the API rejects it)."}),
+                "google_search": (SEARCH_MODES, {"default": "off",
+                                                 "tooltip": "Grounding. 'web + image' adds Google Image Search "
+                                                            "(Nano Banana 2.1 and 2 only)."}),
                 "retry_on_empty": ("BOOLEAN", {"default": True}),
-                "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1}),
+                "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1,
+                                 "tooltip": "gemini-nano-banana-2.1 does not accept a seed: its output is "
+                                            "random every run. Here the seed only forces a re-run."}),
             },
             "optional": {
                 "prompt": ("STRING", {"multiline": True, "default": ""}),
                 "system_instruction": ("STRING", {"multiline": True, "default": ""}),
+                "thinking_level": (IMAGE_THINKING_CHOICES, {"default": "auto",
+                                                            "tooltip": "auto leaves the model on its own default. "
+                                                                       "A level the model lacks falls back to the nearest."}),
                 **{f"image_{i}": ("IMAGE",) for i in range(1, MAX_IMAGE_SLOTS + 1)},
             }
         }
@@ -111,8 +126,9 @@ class NanoBananaVertexNode:
 
     async def generate(self, project_id, location, service_account, model, aspect_ratio, resolution,
                        temperature, top_p, google_search, retry_on_empty, seed,
-                       prompt="", system_instruction="", **kwargs):
+                       prompt="", system_instruction="", thinking_level="auto", **kwargs):
 
+        check_location(model, location)
         client = self.setup_client(service_account, project_id, location)
 
         parts = []
@@ -130,23 +146,23 @@ class NanoBananaVertexNode:
         if not parts:
             raise ValueError("At least one image or prompt must be provided.")
 
-        tools = None
-        if google_search:
-            if supports_google_search(model):
-                tools = [types.Tool(googleSearch=types.GoogleSearch())]
-            else:
-                print(f"[VertexAPI] Ignoring google_search: {model} does not support it.")
+        search_tool = build_search_tool(model, google_search)
+        tools = [search_tool] if search_tool else None
 
         img_config_params = build_image_config(model, aspect_ratio, resolution)
+        thinking_config = build_image_thinking_config(model, thinking_level)
+        sampling = supports_sampling(model)
+        if not sampling:
+            print(f"[VertexAPI] {model} rejects temperature/top_p/seed; not sending them.")
 
         def make_config(seed_value):
+            sampling_params = {"temperature": temperature, "seed": seed_value, "top_p": top_p} if sampling else {}
             return types.GenerateContentConfig(
-                temperature=temperature,
-                seed=seed_value,
-                top_p=top_p,
+                **sampling_params,
                 response_modalities=["IMAGE"],
                 image_config=types.ImageConfig(**img_config_params),
                 system_instruction=system_instruction.strip() if system_instruction.strip() else None,
+                thinking_config=thinking_config,
                 tools=tools
             )
 
@@ -156,6 +172,7 @@ class NanoBananaVertexNode:
         for attempt in range(1, attempts + 1):
             # A repeat of the same seed re-rolls to the same empty result, so
             # step it. seed -1 already means "let the API pick", so leave it.
+            # (Models that take no seed just repeat; every call is random anyway.)
             attempt_seed = seed if seed < 0 else seed + attempt - 1
 
             try:
@@ -179,7 +196,8 @@ class NanoBananaVertexNode:
                     if not e.retryable and not last:
                         print(f"[VertexAPI] Not retrying: {e.reason} will repeat for this request.")
                     raise
-                nxt = "the same random seed" if seed < 0 else f"seed {seed + attempt}"
+                nxt = ("a fresh random roll" if not sampling else
+                       "the same random seed" if seed < 0 else f"seed {seed + attempt}")
                 print(f"[VertexAPI] Empty response on attempt {attempt}/{attempts} "
                       f"({e.reason or 'no reason given'}); retrying with {nxt}.")
                 await asyncio.sleep(EMPTY_RETRY_DELAY)

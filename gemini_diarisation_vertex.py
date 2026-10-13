@@ -9,7 +9,19 @@ from google.genai import types
 from google.oauth2 import service_account
 
 from .vertex_async import run_blocking
-from .vertex_model_caps import THINKING_LEVEL_CHOICES, build_thinking_config
+from .vertex_credentials import (
+    CREDENTIALS_TOOLTIP,
+    default_credentials,
+    list_credentials,
+    resolve_credentials,
+)
+from .vertex_model_caps import (
+    DEFAULT_TEXT_MODEL,
+    TEXT_MODELS,
+    THINKING_LEVEL_CHOICES,
+    build_thinking_config,
+)
+from .vertex_response import extract_text
 
 class GeminiDiarisationNode:
     @classmethod
@@ -18,7 +30,8 @@ class GeminiDiarisationNode:
             "required": {
                 "audio": ("AUDIO",),
                 "num_speakers": ("INT", {"default": 2, "min": 1, "max": 10, "step": 1}),
-                "project_id": ("STRING", {"multiline": False, "default": ""}),
+                "credentials": (list_credentials(), {"default": default_credentials(),
+                                                     "tooltip": CREDENTIALS_TOOLTIP}),
                 "location": ([
                     "global", "us-central1", "us-east1", "us-east4", "us-east5", "us-south1", 
                     "us-west1", "us-west2", "us-west3", "us-west4", 
@@ -32,21 +45,7 @@ class GeminiDiarisationNode:
                     "asia-southeast2", "australia-southeast1", "australia-southeast2", 
                     "me-central1", "me-central2", "me-west1"
                 ], {"default": "global"}),
-                "service_account": ("STRING", {"multiline": True, "default": ""}),
-                "model": ([
-                    "gemini-3.7-flash", 
-                    "gemini-3.6-flash", 
-                    "gemini-3.5-flash", 
-                    "gemini-3.5-flash-lite", 
-                    "gemini-3.1-pro-preview", 
-                    "gemini-3.1-flash-lite", 
-                    "gemini-3-flash-preview", 
-                    "gemini-2.5-flash", 
-                    "gemini-2.5-pro", 
-                    "gemini-2.5-flash-lite", 
-                    "gemini-flash-latest", 
-                    "gemini-flash-lite-latest"
-                ], {"default": "gemini-3.7-flash"}),
+                "model": (TEXT_MODELS, {"default": DEFAULT_TEXT_MODEL}),
                 "seed": ("INT", {"default": 69, "min": 0, "max": 2147483646, "step": 1}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 2.0, "step": 0.1})
             },
@@ -54,7 +53,9 @@ class GeminiDiarisationNode:
                 "thinking": ("BOOLEAN", {"default": False}),
                 "thinking_level": (THINKING_LEVEL_CHOICES, {"default": "auto"}),
                 "thinking_budget": ("INT", {"default": 0, "min": -1, "max": 32768, "step": 1}),
-                "audio_timestamp": ("BOOLEAN", {"default": False})
+                "audio_timestamp": ("BOOLEAN", {"default": False}),
+                "project_id": ("STRING", {"forceInput": True, "tooltip": "Overrides the credentials file."}),
+                "service_account": ("STRING", {"forceInput": True, "tooltip": "Overrides the credentials file."}),
             }
         }
     
@@ -103,9 +104,10 @@ class GeminiDiarisationNode:
             return sum(float(x) * 60 ** i for i, x in enumerate(reversed(parts)))
         except: return 0.0
 
-    async def diarise(self, audio, num_speakers, project_id, location, service_account, model, seed, temperature,
+    async def diarise(self, audio, num_speakers, credentials, location, model, seed, temperature,
                 thinking=False, thinking_level="auto", thinking_budget=0,
-                audio_timestamp=False):
+                audio_timestamp=False,
+                project_id=None, service_account=None):
 
         waveform = audio.get("waveform")
         sr = audio.get("sample_rate")
@@ -123,6 +125,7 @@ class GeminiDiarisationNode:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
             w.writeframes((audio_np * 32767).astype(np.int16).tobytes())
 
+        project_id, service_account = resolve_credentials(credentials, project_id, service_account)
         client = self.setup_client(service_account, project_id, location)
 
         speaker_guidance = f"You must identify exactly {num_speakers} distinct speakers in this audio. " if num_speakers > 0 else ""
@@ -178,8 +181,8 @@ class GeminiDiarisationNode:
             config=config,
         )
 
+        text = extract_text(response, model)
         try:
-            text = response.text
             if "```json" in text: text = re.search(r"```json\n(.*)\n```", text, re.DOTALL).group(1)
             result = json.loads(text)
         except Exception as e:

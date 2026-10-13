@@ -1,9 +1,42 @@
+import io
 import json
+import re
+import wave
 import torch
 from google.genai import Client, types
 from google.oauth2 import service_account
 
 from .vertex_async import run_blocking
+from .vertex_credentials import (
+    CREDENTIALS_TOOLTIP,
+    default_credentials,
+    list_credentials,
+    resolve_credentials,
+)
+
+VOICES = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Achernar", "Laomedeia", "Rasalgethi", "Algenib", "Achird", "Pulcherrima", "Gacrux", "Schedar", "Alnilam", "Sulafat", "Sadaltager", "Sadachbia", "Vindemiatrix", "Zubenelgenubi"]
+
+# The 3.8 TTS models are served from `global` only (404 anywhere else).
+GLOBAL_ONLY_MODELS = ("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts")
+
+
+def decode_audio(data, mime_type):
+    """(int16 samples, sample_rate) from a TTS reply. The 3.8 models return a
+    WAV file (header included); older models return headerless 16-bit PCM with
+    the rate in the mime type, e.g. audio/L16;codec=pcm;rate=24000."""
+    if data[:4] == b"RIFF":
+        with wave.open(io.BytesIO(data)) as w:
+            if w.getsampwidth() != 2:
+                raise ValueError(f"Unexpected WAV sample width {w.getsampwidth() * 8}-bit; expected 16-bit.")
+            frames = w.readframes(w.getnframes())
+            rate, channels = w.getframerate(), w.getnchannels()
+        samples = torch.frombuffer(bytearray(frames), dtype=torch.int16)
+        if channels > 1:
+            samples = samples.view(-1, channels).float().mean(dim=1).to(torch.int16)
+        return samples, rate
+    m = re.search(r"rate=(\d+)", mime_type or "")
+    return torch.frombuffer(bytearray(data), dtype=torch.int16), int(m.group(1)) if m else 24000
+
 
 class GeminiTTSVertexNode:
 
@@ -11,8 +44,11 @@ class GeminiTTSVertexNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "text": ("STRING", {"multiline": True, "default": ""}),
-                "project_id": ("STRING", {"multiline": False, "default": ""}),
+                "text": ("STRING", {"multiline": True, "default": "",
+                                    "tooltip": "Inline tags such as <short pause>, <sigh> or <cough> work in the text. "
+                                               "With two_speakers on, write each line as 'Name: line' using the two speaker names."}),
+                "credentials": (list_credentials(), {"default": default_credentials(),
+                                                     "tooltip": CREDENTIALS_TOOLTIP}),
                 "location": ([
                     "global", "us-central1", "us-east1", "us-east4", "us-east5", "us-south1",
                     "us-west1", "us-west2", "us-west3", "us-west4",
@@ -25,14 +61,16 @@ class GeminiTTSVertexNode:
                     "asia-northeast3", "asia-south1", "asia-south2", "asia-southeast1",
                     "asia-southeast2", "australia-southeast1", "australia-southeast2",
                     "me-central1", "me-central2", "me-west1"
-                ], {"default": "us-central1"}),
-                "service_account": ("STRING", {"multiline": True, "default": ""}),
+                ], {"default": "global",
+                    "tooltip": "The 3.8 TTS models are served from global only."}),
                 "model": ([
+                    "gemini-3.8-flash-tts",
+                    "gemini-3.8-flash-lite-tts",
                     "gemini-3.1-flash-tts-preview",
-                    "gemini-2.5-pro-preview-tts",
-                    "gemini-2.5-flash-preview-tts"
-                ], {"default": "gemini-3.1-flash-tts-preview"}),
-                "voice_id": (["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Achernar", "Laomedeia", "Rasalgethi", "Algenib", "Achird", "Pulcherrima", "Gacrux", "Schedar", "Alnilam", "Sulafat", "Sadaltager", "Sadachbia", "Vindemiatrix", "Zubenelgenubi"],),
+                    "gemini-2.5-pro-tts",
+                    "gemini-2.5-flash-tts"
+                ], {"default": "gemini-3.8-flash-tts"}),
+                "voice_id": (VOICES, {"tooltip": "The voice, or speaker 1's voice when two_speakers is on."}),
                 "seed": ("INT", {"default": 69, "min": -1, "max": 2147483646, "step": 1}),
                 "temperature": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01}),
             },
@@ -42,6 +80,14 @@ class GeminiTTSVertexNode:
                 "accent": (["None", "Neutral", "American (Gen)", "American (Valley)", "American (South)", "British (RP)", "Transatlantic", "Australian"], {"default": "None"}),
                 "audio_profile": ("STRING", {"multiline": True, "default": ""}),
                 "scene": ("STRING", {"multiline": True, "default": ""}),
+                "two_speakers": ("BOOLEAN", {"default": False,
+                                             "tooltip": "Dialogue between exactly two voices. Write the text as "
+                                                        "'Name: line' per line, using the speaker names below."}),
+                "speaker_1_name": ("STRING", {"default": "Speaker1"}),
+                "speaker_2_name": ("STRING", {"default": "Speaker2"}),
+                "speaker_2_voice": (VOICES, {"default": "Puck"}),
+                "project_id": ("STRING", {"forceInput": True, "tooltip": "Overrides the credentials file."}),
+                "service_account": ("STRING", {"forceInput": True, "tooltip": "Overrides the credentials file."}),
             }
         }
 
@@ -76,12 +122,17 @@ class GeminiTTSVertexNode:
             )
         )
 
-    async def generate_speech(self, text, project_id, location, service_account, model, voice_id,
-                        temperature, seed, audio_profile="", style="None", pace="None", accent="None", scene=""):
+    async def generate_speech(self, text, credentials, location, model, voice_id,
+                        temperature, seed, audio_profile="", style="None", pace="None", accent="None", scene="",
+                        two_speakers=False, speaker_1_name="Speaker1", speaker_2_name="Speaker2", speaker_2_voice="Puck",
+                        project_id=None, service_account=None):
 
         if not text.strip():
             raise ValueError("Text input cannot be empty.")
+        if model in GLOBAL_ONLY_MODELS and location.strip() != "global":
+            raise ValueError(f"{model} is only served from global. Set location to global.")
 
+        project_id, service_account = resolve_credentials(credentials, project_id, service_account)
         client = self.setup_client(service_account, project_id, location)
 
         director_parts = []
@@ -104,15 +155,29 @@ class GeminiTTSVertexNode:
         else:
             prompt = f"## Transcript:\n{text.strip()}"
 
+        def voice(name):
+            return types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=name))
+
+        if two_speakers:
+            names = [speaker_1_name.strip(), speaker_2_name.strip()]
+            if not all(names) or names[0] == names[1]:
+                raise ValueError("two_speakers needs two different, non-empty speaker names.")
+            for name in names:
+                if not re.search(rf"^\s*{re.escape(name)}\s*:", text, re.M):
+                    raise ValueError(f"two_speakers is on but no line of the text starts with '{name}:'.")
+            speech_config = types.SpeechConfig(multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                speaker_voice_configs=[
+                    types.SpeakerVoiceConfig(speaker=names[0], voice_config=voice(voice_id)),
+                    types.SpeakerVoiceConfig(speaker=names[1], voice_config=voice(speaker_2_voice)),
+                ]))
+        else:
+            speech_config = types.SpeechConfig(voice_config=voice(voice_id))
+
         config = types.GenerateContentConfig(
             temperature=temperature,
             seed=seed,
             response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_id)
-                )
-            )
+            speech_config=speech_config,
         )
 
         try:
@@ -126,19 +191,20 @@ class GeminiTTSVertexNode:
             raise RuntimeError(f"Gemini API Error: {str(e)}")
 
         try:
-            audio_bytes = response.candidates[0].content.parts[0].inline_data.data
+            inline = response.candidates[0].content.parts[0].inline_data
+            audio_bytes, mime_type = inline.data, inline.mime_type
         except (AttributeError, IndexError, TypeError):
             raise ValueError("API returned a response, but it contained no audio data.")
 
-        waveform = torch.frombuffer(bytearray(audio_bytes), dtype=torch.int16)
-        waveform = waveform.to(torch.float32) / 32768.0
+        samples, sample_rate = decode_audio(audio_bytes, mime_type)
+        waveform = samples.to(torch.float32) / 32768.0
         waveform = waveform.unsqueeze(0).unsqueeze(0)
 
-        return ({"waveform": waveform, "sample_rate": 24000},)
+        return ({"waveform": waveform, "sample_rate": sample_rate},)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
-        return f"{kwargs.get('text', '')}-{kwargs.get('voice_id', '')}-{kwargs.get('temperature', 1.0)}-{kwargs.get('model', '')}-{kwargs.get('seed', 69)}-{kwargs.get('audio_profile', '')}-{kwargs.get('style', '')}-{kwargs.get('pace', '')}-{kwargs.get('accent', '')}-{kwargs.get('scene', '')}"
+        return f"{kwargs.get('text', '')}-{kwargs.get('voice_id', '')}-{kwargs.get('temperature', 1.0)}-{kwargs.get('model', '')}-{kwargs.get('seed', 69)}-{kwargs.get('audio_profile', '')}-{kwargs.get('style', '')}-{kwargs.get('pace', '')}-{kwargs.get('accent', '')}-{kwargs.get('scene', '')}-{kwargs.get('two_speakers', False)}-{kwargs.get('speaker_1_name', '')}-{kwargs.get('speaker_2_name', '')}-{kwargs.get('speaker_2_voice', '')}-{kwargs.get('location', '')}"
 
 NODE_CLASS_MAPPINGS = {"GeminiTTSVertexNode": GeminiTTSVertexNode}
 NODE_DISPLAY_NAME_MAPPINGS = {"GeminiTTSVertexNode": "Gemini TTS (Vertex AI)"}

@@ -9,7 +9,19 @@ from google.genai import types
 from google.oauth2 import service_account
 
 from .vertex_async import run_blocking
-from .vertex_model_caps import THINKING_LEVEL_CHOICES, build_thinking_config
+from .vertex_credentials import (
+    CREDENTIALS_TOOLTIP,
+    default_credentials,
+    list_credentials,
+    resolve_credentials,
+)
+from .vertex_model_caps import (
+    DEFAULT_TEXT_MODEL,
+    TEXT_MODELS,
+    THINKING_LEVEL_CHOICES,
+    build_thinking_config,
+)
+from .vertex_response import extract_text
 
 class GeminiChatVertexNode:
     @classmethod
@@ -17,7 +29,8 @@ class GeminiChatVertexNode:
         return {
             "required": {
                 "prompt": ("STRING", {"multiline": True}),
-                "project_id": ("STRING", {"multiline": False, "default": ""}),
+                "credentials": (list_credentials(), {"default": default_credentials(),
+                                                     "tooltip": CREDENTIALS_TOOLTIP}),
                 "location": ([
                     "global", "us-central1", "us-east1", "us-east4", "us-east5", "us-south1",
                     "us-west1", "us-west2", "us-west3", "us-west4",
@@ -31,21 +44,7 @@ class GeminiChatVertexNode:
                     "asia-southeast2", "australia-southeast1", "australia-southeast2",
                     "me-central1", "me-central2", "me-west1"
                 ], {"default": "global"}),
-                "service_account": ("STRING", {"multiline": True, "default": ""}),
-                "model": ([
-                    "gemini-3.7-flash", 
-                    "gemini-3.6-flash", 
-                    "gemini-3.5-flash", 
-                    "gemini-3.5-flash-lite", 
-                    "gemini-3.1-pro-preview", 
-                    "gemini-3.1-flash-lite", 
-                    "gemini-3-flash-preview", 
-                    "gemini-2.5-flash", 
-                    "gemini-2.5-pro", 
-                    "gemini-2.5-flash-lite", 
-                    "gemini-flash-latest", 
-                    "gemini-flash-lite-latest"
-                ], {"default": "gemini-3.7-flash"}),
+                "model": (TEXT_MODELS, {"default": DEFAULT_TEXT_MODEL}),
                 "temperature": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 2.0, "step": 0.1}),
                 "top_p": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "thinking": ("BOOLEAN", {"default": True}),
@@ -59,6 +58,8 @@ class GeminiChatVertexNode:
                 "thinking_budget": ("INT", {"default": -1, "min": -1, "max": 32768, "step": 1}),
                 "image": ("IMAGE",),
                 "audio": ("AUDIO",),
+                "project_id": ("STRING", {"forceInput": True, "tooltip": "Overrides the credentials file."}),
+                "service_account": ("STRING", {"forceInput": True, "tooltip": "Overrides the credentials file."}),
             }
         }
     
@@ -93,11 +94,13 @@ class GeminiChatVertexNode:
             )
         )
 
-    async def generate(self, prompt, project_id, location, service_account, model, temperature, top_p,
+    async def generate(self, prompt, credentials, location, model, temperature, top_p,
                  thinking, google_search, url_context, seed,
                  system_instruction=None, thinking_level="auto", thinking_budget=-1,
-                 image=None, audio=None):
+                 image=None, audio=None,
+                 project_id=None, service_account=None):
 
+        project_id, service_account = resolve_credentials(credentials, project_id, service_account)
         client = self.setup_client(service_account, project_id, location)
         parts = [types.Part.from_text(text=prompt)]
 
@@ -144,7 +147,7 @@ class GeminiChatVertexNode:
             config=config,
         )
         
-        return (response.text,)
+        return (extract_text(response, model),)
 
 NODE_CLASS_MAPPINGS = {"GeminiChatVertexNode": GeminiChatVertexNode}
 NODE_DISPLAY_NAME_MAPPINGS = {"GeminiChatVertexNode": "Gemini Chat (Vertex AI)"}

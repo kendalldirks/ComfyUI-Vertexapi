@@ -66,8 +66,26 @@ def extract_image_bytes(response, model=""):
     raise EmptyResponseError(message, retryable=retryable, reason=reason)
 
 
-def _explain(response, model, candidates, texts):
-    where = f"{model} returned a response with no image" if model else "The response contained no image"
+def extract_text(response, model=""):
+    """Return the response's text (thought parts excluded), or raise
+    EmptyResponseError explaining why there is none."""
+    candidates = getattr(response, "candidates", None) or []
+    texts = []
+    for cand in candidates[:1]:
+        content = getattr(cand, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            text = getattr(part, "text", None)
+            if text and not getattr(part, "thought", False):
+                texts.append(text)
+    if "".join(texts).strip():
+        return "".join(texts)
+
+    message, retryable, reason = _explain(response, model, candidates, [], what="text")
+    raise EmptyResponseError(message, retryable=retryable, reason=reason)
+
+
+def _explain(response, model, candidates, texts, what="image"):
+    where = f"{model} returned a response with no {what}" if model else f"The response contained no {what}"
     bits = []
     retryable = True
     reason = None
@@ -97,7 +115,7 @@ def _explain(response, model, candidates, texts):
             bits.append(f"{_FILTER_ADVICE.get(finish, 'generation stopped early')} (finish_reason={finish})")
             if finish == "MAX_TOKENS":
                 bits.append(
-                    "the output token budget ran out before an image was produced — "
+                    f"the output token budget ran out before any {what} was produced — "
                     "thinking tokens count against it, so try a lower thinking level, "
                     "a shorter prompt, or a model with a larger output budget "
                     "(gemini-3.1-flash-lite-image allows only 4,096)"
